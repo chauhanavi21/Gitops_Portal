@@ -1,0 +1,159 @@
+###############################################################################
+# Backstage App Configuration
+# See: https://backstage.io/docs/conf/
+###############################################################################
+
+app:
+  title: Platform Portal
+  baseUrl: http://localhost:3000
+
+organization:
+  name: Platform Engineering
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+
+# ---------- Authentication ----------
+# TODO: CONFIGURE — Set up your identity provider
+# Backstage supports GitHub, GitLab, Google, Okta, Azure AD
+# See: https://backstage.io/docs/auth/
+auth:
+  environment: development
+  providers:
+    # TODO: API REQUIRED — GitHub OAuth App credentials
+    # Create at: https://github.com/settings/developers
+    # Set callback URL to: http://localhost:7007/api/auth/github/handler/frame
+    github:
+      development:
+        clientId: ${GITHUB_CLIENT_ID}           # <-- CONFIGURE: GitHub OAuth App Client ID
+        clientSecret: ${GITHUB_CLIENT_SECRET}   # <-- CONFIGURE: GitHub OAuth App Client Secret
+
+# ---------- Software Catalog ----------
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+    pullRequestBranchName: backstage-integration
+  rules:
+    - allow: [Component, System, API, Resource, Location, Template, Group, User]
+  locations:
+    # Local catalog entities
+    - type: file
+      target: ./catalog-info.yaml
+      rules:
+        - allow: [Component, System, API, Resource, Location, Group, User]
+
+    # Golden path templates
+    - type: file
+      target: ./templates/microservice-go/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./templates/microservice-python/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./templates/microservice-node/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./templates/microservice-cpp/template.yaml
+      rules:
+        - allow: [Template]
+
+    # TODO: API REQUIRED — GitHub org discovery (auto-discover repos)
+    # Requires a GitHub token with `read:org` scope
+    # - type: github-discovery
+    #   target: https://github.com/YOUR_ORG
+
+# ---------- Integrations ----------
+integrations:
+  # TODO: API REQUIRED — GitHub token for repo creation and catalog discovery
+  # Create a Personal Access Token at: https://github.com/settings/tokens
+  # Required scopes: repo, read:org, read:user, workflow
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}  # <-- CONFIGURE: GitHub Personal Access Token
+
+# ---------- TechDocs ----------
+techdocs:
+  builder: 'local'
+  generator:
+    runIn: 'local'
+  publisher:
+    type: 'local'
+    # For production, use S3:
+    # type: 'awsS3'
+    # awsS3:
+    #   bucketName: 'platform-techdocs'
+    #   region: 'us-east-1'
+
+# ---------- Scaffolder (Software Templates) ----------
+scaffolder:
+  # TODO: API REQUIRED — GitHub token for creating repos from templates
+  # Uses the same token as integrations.github above
+  defaultAuthor:
+    name: Platform Bot
+    email: platform-bot@company.com
+  defaultCommitMessage: 'Initial scaffold from golden path template'
+
+# ---------- Kubernetes Plugin ----------
+# Shows K8s resources per service in Backstage
+kubernetes:
+  serviceLocatorMethod:
+    type: 'multiTenant'
+  clusterLocatorMethods:
+    - type: 'config'
+      clusters:
+        # TODO: CONFIGURE — Add your EKS cluster details
+        # Run: aws eks describe-cluster --name platform-dev-eks
+        - url: ${K8S_CLUSTER_URL}                      # <-- CONFIGURE: EKS API endpoint
+          name: platform-dev
+          authProvider: 'serviceAccount'
+          serviceAccountToken: ${K8S_SA_TOKEN}         # <-- CONFIGURE: Service account token
+          skipTLSVerify: true
+          skipMetricsLookup: false
+
+# ---------- Proxy (for custom backends) ----------
+proxy:
+  '/platform-api':
+    target: http://localhost:8000
+    changeOrigin: true
+
+  # Argo CD API proxy
+  # TODO: CONFIGURE — Argo CD server URL and auth token
+  '/argocd/api':
+    target: ${ARGOCD_SERVER_URL}                       # <-- CONFIGURE: Argo CD server URL
+    changeOrigin: true
+    headers:
+      Cookie:
+        $env: ARGOCD_AUTH_TOKEN                        # <-- CONFIGURE: Argo CD auth token
+
+  # Grafana proxy
+  '/grafana/api':
+    target: http://localhost:3001
+    headers:
+      Authorization: Bearer ${GRAFANA_TOKEN}           # <-- CONFIGURE: Grafana API token
+
+# ---------- Argo CD Plugin ----------
+argocd:
+  # TODO: CONFIGURE — Argo CD instance details
+  baseUrl: ${ARGOCD_SERVER_URL}                        # <-- CONFIGURE: Argo CD server URL
+  username: admin
+  password: ${ARGOCD_ADMIN_PASSWORD}                   # <-- CONFIGURE: Argo CD admin password
+  appLocatorMethods:
+    - type: 'config'
+      instances:
+        - name: argocd
+          url: ${ARGOCD_SERVER_URL}
+          token: ${ARGOCD_AUTH_TOKEN}
