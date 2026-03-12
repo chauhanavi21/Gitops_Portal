@@ -1,0 +1,270 @@
+###############################################################################
+# Root Catalog — Platform Portal Entities
+###############################################################################
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-portal
+  description: Internal Developer Platform with GitOps and Golden Paths
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - platform
+    - idp
+    - gitops
+spec:
+  owner: platform-engineering
+  domain: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-engineering
+  description: Platform Engineering Team
+spec:
+  type: team
+  profile:
+    displayName: Platform Engineering
+    email: platform-eng@company.com
+  children: []
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: platform-admin
+  description: Platform Administrator
+spec:
+  profile:
+    displayName: Platform Admin
+    email: admin@company.com
+  memberOf: [platform-engineering]
+
+---
+# ---------- Order Service (Go) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: order-service
+  description: Order management microservice written in Go
+  annotations:
+    github.com/project-slug: YOUR_ORG/portal-gitop
+    backstage.io/techdocs-ref: dir:../services/order-service
+    argocd/app-name: order-service-dev
+    prometheus.io/rule: 'order_service_requests_total'
+    grafana/dashboard-selector: order-service
+  tags:
+    - go
+    - backend
+    - grpc
+  links:
+    - url: https://github.com/YOUR_ORG/portal-gitop/tree/main/services/order-service
+      title: Source Code
+      icon: github
+    - url: http://localhost:16686/search?service=order-service
+      title: Jaeger Traces
+      icon: dashboard
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  providesApis:
+    - order-api
+  dependsOn:
+    - component:user-service
+    - component:pricing-engine
+
+---
+# ---------- User Service (Python) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: user-service
+  description: User management microservice written in Python
+  annotations:
+    github.com/project-slug: YOUR_ORG/portal-gitop
+    backstage.io/techdocs-ref: dir:../services/user-service
+    argocd/app-name: user-service-dev
+    prometheus.io/rule: 'user_service_requests_total'
+  tags:
+    - python
+    - backend
+    - rest
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  providesApis:
+    - user-api
+
+---
+# ---------- API Gateway (Node.js) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: api-gateway
+  description: API Gateway / BFF written in Node.js TypeScript
+  annotations:
+    github.com/project-slug: YOUR_ORG/portal-gitop
+    backstage.io/techdocs-ref: dir:../services/api-gateway
+    argocd/app-name: api-gateway-dev
+  tags:
+    - nodejs
+    - typescript
+    - gateway
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  consumesApis:
+    - order-api
+    - user-api
+    - pricing-api
+
+---
+# ---------- Pricing Engine (C++) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: pricing-engine
+  description: High-performance pricing/calculation engine written in C++
+  annotations:
+    github.com/project-slug: YOUR_ORG/portal-gitop
+    argocd/app-name: pricing-engine-dev
+  tags:
+    - cpp
+    - backend
+    - performance
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  providesApis:
+    - pricing-api
+
+---
+# ---------- Platform Control Plane API ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: platform-api
+  description: Platform control plane API (FastAPI) managing templates, metadata, audit
+  annotations:
+    github.com/project-slug: YOUR_ORG/portal-gitop
+  tags:
+    - python
+    - fastapi
+    - platform
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  providesApis:
+    - platform-control-api
+
+---
+# ---------- API Definitions ----------
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: order-api
+  description: Order Service REST/gRPC API
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: Order Service API
+      version: 1.0.0
+    paths:
+      /api/v1/orders:
+        get:
+          summary: List orders
+        post:
+          summary: Create order
+      /api/v1/orders/{id}:
+        get:
+          summary: Get order by ID
+      /healthz:
+        get:
+          summary: Health check
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: user-api
+  description: User Service REST API
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: User Service API
+      version: 1.0.0
+    paths:
+      /api/v1/users:
+        get:
+          summary: List users
+        post:
+          summary: Create user
+      /api/v1/users/{id}:
+        get:
+          summary: Get user by ID
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: pricing-api
+  description: Pricing Engine gRPC/REST API
+spec:
+  type: grpc
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  definition: |
+    syntax = "proto3";
+    service PricingService {
+      rpc CalculatePrice (PriceRequest) returns (PriceResponse);
+      rpc GetDiscount (DiscountRequest) returns (DiscountResponse);
+    }
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: platform-control-api
+  description: Platform Control Plane API
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: Platform Control Plane API
+      version: 1.0.0
+    paths:
+      /api/v1/services:
+        get:
+          summary: List registered services
+      /api/v1/templates:
+        get:
+          summary: List available templates
+      /api/v1/audit:
+        get:
+          summary: List audit log entries
