@@ -1,0 +1,35 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "backstage-cli package start",
+    "build": "backstage-cli package build",
+    "build-image": "docker build . -t backstage-backend",
+    "clean": "backstage-cli package clean"
+  },
+  "dependencies": {
+    "@backstage/backend-defaults": "^0.2.0",
+    "@backstage/backend-app-api": "^0.5.0",
+    "@backstage/plugin-app-backend": "^0.3.0",
+    "@backstage/plugin-auth-backend": "^0.21.0",
+    "@backstage/plugin-auth-node": "^0.4.0",
+    "@backstage/plugin-catalog-backend": "^1.16.0",
+    "@backstage/plugin-kubernetes-backend": "^0.13.0",
+    "@backstage/plugin-proxy-backend": "^0.4.0",
+    "@backstage/plugin-scaffolder-backend": "^1.20.0",
+    "@backstage/plugin-search-backend": "^1.5.0",
+    "@backstage/plugin-search-backend-module-catalog": "^0.1.0",
+    "@backstage/plugin-search-backend-module-techdocs": "^0.1.0",
+    "@backstage/plugin-techdocs-backend": "^1.9.0",
+    "better-sqlite3": "^9.0.0",
+    "dockerode": "^3.3.0",
+    "pg": "^8.11.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@backstage/cli": "^0.25.0",
+    "@types/dockerode": "^3.3.0",
+    "typescript": "~5.2.0"
+  }
+}
