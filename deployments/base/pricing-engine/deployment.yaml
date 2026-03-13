@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing-engine
+  labels:
+    app: pricing-engine
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pricing-engine
+  template:
+    metadata:
+      labels:
+        app: pricing-engine
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: pricing-engine
+      containers:
+        - name: pricing-engine
+          image: pricing-engine:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SERVICE_NAME
+              value: pricing-engine
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability:4317"
+            - name: OTEL_SERVICE_NAME
+              value: pricing-engine
+          resources:
+            requests:
+              cpu: 200m
+              memory: 64Mi
+            limits:
+              cpu: 1000m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pricing-engine
