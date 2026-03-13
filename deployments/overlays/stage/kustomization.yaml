@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-stage
+
+resources:
+  - ../../base
+
+commonLabels:
+  environment: stage
+
+images:
+  - name: order-service
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/order-service
+    newTag: stage-latest
+  - name: user-service
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/user-service
+    newTag: stage-latest
+  - name: api-gateway
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/api-gateway
+    newTag: stage-latest
+  - name: pricing-engine
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/pricing-engine
+    newTag: stage-latest
+
+patches:
+  - target:
+      kind: Deployment
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+configMapGenerator:
+  - name: platform-config
+    literals:
+      - ENVIRONMENT=stage
+      - LOG_LEVEL=info
+      - ENABLE_DEBUG=false
