@@ -1,0 +1,52 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-dev
+
+resources:
+  - ../../base
+
+namePrefix: ""
+nameSuffix: ""
+
+commonLabels:
+  environment: dev
+
+# Image overrides for dev
+images:
+  - name: order-service
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/order-service
+    newTag: dev-latest
+  - name: user-service
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/user-service
+    newTag: dev-latest
+  - name: api-gateway
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/api-gateway
+    newTag: dev-latest
+  - name: pricing-engine
+    newName: YOUR_ECR_REGISTRY.dkr.ecr.us-east-1.amazonaws.com/pricing-engine
+    newTag: dev-latest
+
+# Dev-specific patches
+patches:
+  # Reduce replicas in dev
+  - target:
+      kind: Deployment
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  # Add dev environment label
+  - target:
+      kind: Deployment
+    patch: |
+      - op: add
+        path: /spec/template/metadata/labels/tier
+        value: dev
+
+configMapGenerator:
+  - name: platform-config
+    literals:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=debug
+      - ENABLE_DEBUG=true
