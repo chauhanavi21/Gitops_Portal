@@ -1,0 +1,118 @@
+# Argo CD Application — Order Service (Dev)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform-services
+    environment: dev
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-services
+
+  source:
+    repoURL: https://github.com/YOUR_ORG/portal-gitop.git
+    targetRevision: main
+    path: deployments/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-dev
+
+  syncPolicy:
+    automated:
+      prune: true          # Remove resources not in Git
+      selfHeal: true       # Re-sync if drift detected
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Allow HPA to change replicas
+
+---
+# Argo CD Application — Order Service (Stage)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-service-stage
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform-services
+    environment: stage
+spec:
+  project: platform-services
+  source:
+    repoURL: https://github.com/YOUR_ORG/portal-gitop.git
+    targetRevision: main
+    path: deployments/overlays/stage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-stage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Argo CD Application — Order Service (Prod)
+# NOTE: Prod requires MANUAL sync — no automated sync
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-service-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform-services
+    environment: prod
+spec:
+  project: platform-services
+  source:
+    repoURL: https://github.com/YOUR_ORG/portal-gitop.git
+    targetRevision: main
+    path: deployments/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-prod
+  syncPolicy:
+    # NO automated sync — production requires manual approval
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+
+---
+# App of Apps — deploys all services in dev
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-apps-dev
+  namespace: argocd
+spec:
+  project: platform-services
+  source:
+    repoURL: https://github.com/YOUR_ORG/portal-gitop.git
+    targetRevision: main
+    path: deployments/argocd/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
