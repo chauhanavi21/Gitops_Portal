@@ -1,0 +1,96 @@
+# Argo CD AppProject — Platform Services
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-services
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Platform microservices managed by platform engineering
+
+  # Source repos
+  sourceRepos:
+    - 'https://github.com/YOUR_ORG/portal-gitop.git'
+
+  # Destination clusters and namespaces
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: 'platform-dev'
+    - server: https://kubernetes.default.svc
+      namespace: 'platform-stage'
+    - server: https://kubernetes.default.svc
+      namespace: 'platform-prod'
+
+  # Allowed cluster-scoped resources
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+
+  # Allowed namespace-scoped resource kinds
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: '*'
+    - group: 'apps'
+      kind: '*'
+    - group: 'batch'
+      kind: '*'
+    - group: 'networking.k8s.io'
+      kind: '*'
+    - group: 'autoscaling'
+      kind: '*'
+
+  # RBAC roles within this project
+  roles:
+    - name: platform-admin
+      description: Full access to all applications
+      policies:
+        - p, proj:platform-services:platform-admin, applications, *, platform-services/*, allow
+      groups:
+        - platform-engineering
+
+    - name: team-owner
+      description: Sync and view applications
+      policies:
+        - p, proj:platform-services:team-owner, applications, get, platform-services/*, allow
+        - p, proj:platform-services:team-owner, applications, sync, platform-services/*, allow
+
+  # Sync windows — restrict prod deployments to business hours
+  syncWindows:
+    - kind: allow
+      schedule: '0 9-17 * * 1-5'  # Mon-Fri 9am-5pm
+      duration: 8h
+      namespaces:
+        - platform-prod
+      manualSync: true
+    - kind: deny
+      schedule: '0 0 * * 0,6'  # Weekends
+      duration: 48h
+      namespaces:
+        - platform-prod
+
+---
+# AppProject for observability stack
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  description: Observability stack (Prometheus, Grafana, Jaeger, OTel)
+  sourceRepos:
+    - 'https://github.com/YOUR_ORG/portal-gitop.git'
+    - 'https://prometheus-community.github.io/helm-charts'
+    - 'https://grafana.github.io/helm-charts'
+    - 'https://jaegertracing.github.io/helm-charts'
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: 'observability'
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'monitoring.coreos.com'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
