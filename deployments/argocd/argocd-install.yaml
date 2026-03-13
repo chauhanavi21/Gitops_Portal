@@ -1,0 +1,109 @@
+# Argo CD Installation — lightweight install for the platform
+# For production, use HA install: https://argo-cd.readthedocs.io/en/stable/operator-manual/installation/
+# This references the upstream manifest. Pin the version for reproducibility.
+# kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.9.3/manifests/install.yaml
+#
+# Using a local reference for offline/airgapped installs:
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+
+---
+# NOTE: In production, apply the official Argo CD manifests:
+# kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.9.3/manifests/install.yaml
+#
+# Then apply the custom configurations below.
+
+# ---------- Argo CD ConfigMap ----------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+data:
+  # Repository credentials
+  # TODO: CONFIGURE — Add your Git repository URL
+  repositories: |
+    - url: https://github.com/YOUR_ORG/portal-gitop.git
+      type: git
+      passwordSecret:
+        name: argocd-repo-creds
+        key: password
+      usernameSecret:
+        name: argocd-repo-creds
+        key: username
+
+  # Resource tracking method
+  application.resourceTrackingMethod: annotation
+
+  # Status badge enabled
+  statusbadge.enabled: "true"
+
+  # Dex connector for SSO (optional)
+  # TODO: EXTERNAL DEPENDENCY — Configure SSO provider (GitHub, OIDC, LDAP)
+  # url: https://argocd.platform.company.com
+  # dex.config: |
+  #   connectors:
+  #     - type: github
+  #       id: github
+  #       name: GitHub
+  #       config:
+  #         clientID: $GITHUB_OAUTH_CLIENT_ID
+  #         clientSecret: $GITHUB_OAUTH_CLIENT_SECRET
+  #         orgs:
+  #           - name: YOUR_ORG
+
+---
+# ---------- Argo CD RBAC Policy ----------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+data:
+  policy.default: role:readonly
+  policy.csv: |
+    # Platform admins — full access
+    p, role:platform-admin, applications, *, */*, allow
+    p, role:platform-admin, clusters, *, *, allow
+    p, role:platform-admin, repositories, *, *, allow
+    p, role:platform-admin, projects, *, *, allow
+
+    # Team owners — manage their own apps
+    p, role:team-owner, applications, get, */*, allow
+    p, role:team-owner, applications, sync, */*, allow
+    p, role:team-owner, applications, action/*, */*, allow
+    p, role:team-owner, applications, delete, */*, deny
+    p, role:team-owner, logs, get, */*, allow
+
+    # Developers — read only
+    p, role:developer, applications, get, */*, allow
+    p, role:developer, logs, get, */*, allow
+
+    # Group bindings
+    g, platform-engineering, role:platform-admin
+    g, team-leads, role:team-owner
+    g, developers, role:developer
+
+---
+# ---------- Repository Credentials Secret ----------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-repo-creds
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+type: Opaque
+stringData:
+  # TODO: CONFIGURE — Never commit real credentials!
+  # Use sealed-secrets or external-secrets in production
+  # These are placeholders only
+  username: "git"
+  password: "REPLACE_WITH_GITHUB_TOKEN"  # <-- CONFIGURE: GitHub PAT with repo access
