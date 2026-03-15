@@ -1,0 +1,59 @@
+# CI Pipeline — Order Service (Go)
+name: CI - Order Service (Go)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/order-service/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/order-service/**'
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  security-events: write
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: services/order-service/go.sum
+
+      - name: Lint with golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          working-directory: services/order-service
+          version: latest
+
+      - name: Run tests
+        working-directory: services/order-service
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: services/order-service/coverage.out
+
+  build-and-push:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      service_name: order-service
+      service_path: services/order-service
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
