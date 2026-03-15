@@ -1,0 +1,64 @@
+# CI Pipeline — API Gateway (Node.js)
+name: CI - API Gateway (Node.js)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/api-gateway/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/api-gateway/**'
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  security-events: write
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/api-gateway/package-lock.json
+
+      - name: Install dependencies
+        working-directory: services/api-gateway
+        run: npm ci
+
+      - name: Lint
+        working-directory: services/api-gateway
+        run: npm run lint
+
+      - name: Type check
+        working-directory: services/api-gateway
+        run: npm run typecheck
+
+      - name: Run tests
+        working-directory: services/api-gateway
+        run: npm test -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-coverage
+          path: services/api-gateway/coverage/
+
+  build-and-push:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      service_name: api-gateway
+      service_path: services/api-gateway
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
