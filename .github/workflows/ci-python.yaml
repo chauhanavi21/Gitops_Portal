@@ -1,0 +1,70 @@
+# CI Pipeline — User Service (Python)
+name: CI - User Service (Python)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/user-service/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/user-service/**'
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  security-events: write
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: services/user-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: services/user-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        working-directory: services/user-service
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Type check with mypy
+        working-directory: services/user-service
+        run: mypy src/ --ignore-missing-imports
+
+      - name: Run tests with pytest
+        working-directory: services/user-service
+        run: |
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: services/user-service/coverage.xml
+
+  build-and-push:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      service_name: user-service
+      service_path: services/user-service
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
