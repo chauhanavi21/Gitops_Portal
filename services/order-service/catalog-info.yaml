@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: order-service
+  description: Order management microservice (Go)
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    argocd/app-name: order-service-dev
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineering
+  system: platform-portal
