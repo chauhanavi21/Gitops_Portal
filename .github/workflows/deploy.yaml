@@ -1,0 +1,94 @@
+# Environment Promotion Workflow
+# Promotes images from dev → stage → prod via manifest update
+name: Promote Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to promote'
+        required: true
+        type: choice
+        options:
+          - order-service
+          - user-service
+          - api-gateway
+          - pricing-engine
+      source_env:
+        description: 'Source environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+      target_env:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      image_tag:
+        description: 'Image tag to promote'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate promotion path
+        run: |
+          if [ "${{ inputs.source_env }}" == "dev" ] && [ "${{ inputs.target_env }}" == "prod" ]; then
+            echo "ERROR: Cannot promote directly from dev to prod. Must go through stage."
+            exit 1
+          fi
+
+  promote:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update target environment manifest
+        run: |
+          cd deployments/overlays/${{ inputs.target_env }}
+          # Update image tag for the specific service
+          sed -i "/${{ inputs.service }}/{n;s/newTag: .*/newTag: ${{ inputs.image_tag }}/}" kustomization.yaml
+
+      - name: Create promotion PR
+        if: inputs.target_env == 'prod'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          title: "promote(${{ inputs.target_env }}): ${{ inputs.service }} → ${{ inputs.image_tag }}"
+          body: |
+            ## Environment Promotion
+
+            | Field | Value |
+            |-------|-------|
+            | Service | `${{ inputs.service }}` |
+            | Source | `${{ inputs.source_env }}` |
+            | Target | `${{ inputs.target_env }}` |
+            | Image Tag | `${{ inputs.image_tag }}` |
+            | Triggered by | @${{ github.actor }} |
+
+            ### Checklist
+            - [ ] Staging tests passed
+            - [ ] SLO targets met in staging
+            - [ ] Rollback plan reviewed
+            - [ ] On-call team notified
+          branch: promote/${{ inputs.service }}-${{ inputs.target_env }}-${{ inputs.image_tag }}
+          labels: promotion,production,${{ inputs.service }}
+
+      - name: Auto-commit for non-prod
+        if: inputs.target_env != 'prod'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployments/
+          git commit -m "promote(${{ inputs.target_env }}): ${{ inputs.service }} → ${{ inputs.image_tag }}"
+          git push
