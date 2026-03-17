@@ -1,0 +1,158 @@
+{
+  "annotations": { "list": [] },
+  "description": "GitOps Pipeline — Argo CD & Deployment Health",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Argo CD App Sync Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "argocd_app_info",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "name": true,
+              "project": true,
+              "sync_status": true,
+              "health_status": true,
+              "dest_namespace": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sync_status" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "Synced": { "color": "green", "text": "Synced" } } },
+                  { "type": "value", "options": { "OutOfSync": { "color": "red", "text": "OutOfSync" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Sync Operations Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(argocd_app_sync_total[1h])) by (name, phase)",
+          "legendFormat": "{{ name }} ({{ phase }})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 80 }
+        }
+      }
+    },
+    {
+      "title": "Deployment Frequency (deploys/day)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(argocd_app_sync_total{phase=\"Succeeded\"}[24h])) by (name)",
+          "legendFormat": "{{ name }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Deployment Rollback Count (7d)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(argocd_app_sync_total{phase=\"Failed\"}[7d]))",
+          "legendFormat": "Failed Syncs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Health Status by App",
+      "type": "piechart",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(argocd_app_info) by (health_status)",
+          "legendFormat": "{{ health_status }}"
+        }
+      ]
+    },
+    {
+      "title": "Repo Server Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(argocd_git_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99 Git Request"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": ["gitops", "argocd", "dora"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "GitOps Pipeline — Argo CD",
+  "uid": "gitops-argocd",
+  "version": 1
+}
