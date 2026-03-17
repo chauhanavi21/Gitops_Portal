@@ -1,0 +1,160 @@
+# =============================================================================
+# Prometheus Configuration
+# =============================================================================
+# Scrape configs for all platform services + infrastructure components
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    cluster: 'developer-portal'
+    # TODO: CONFIGURE — Set to your environment
+    environment: 'dev'
+
+# Recording & alerting rules
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+
+# Alertmanager configuration
+# TODO: EXTERNAL DEPENDENCY — Configure Alertmanager for PagerDuty/Slack/Email
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager.observability.svc.cluster.local:9093
+
+scrape_configs:
+  # -----------------------------------------------------------------------
+  # Platform Microservices
+  # -----------------------------------------------------------------------
+  - job_name: 'order-service'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['platform']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: order-service
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '${1}:8080'
+    metrics_path: /metrics
+
+  - job_name: 'user-service'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['platform']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: user-service
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '${1}:8000'
+    metrics_path: /metrics
+
+  - job_name: 'api-gateway'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['platform']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: api-gateway
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '${1}:3000'
+    metrics_path: /metrics
+
+  - job_name: 'pricing-engine'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['platform']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: pricing-engine
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '${1}:8080'
+    metrics_path: /metrics
+
+  - job_name: 'platform-api'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['platform']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: platform-api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '${1}:8000'
+    metrics_path: /metrics
+
+  # -----------------------------------------------------------------------
+  # Infrastructure Components
+  # -----------------------------------------------------------------------
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector.observability.svc.cluster.local:8888']
+
+  - job_name: 'argocd-metrics'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['argocd']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: argocd-server|argocd-repo-server|argocd-application-controller
+        action: keep
+    metrics_path: /metrics
+
+  - job_name: 'kube-state-metrics'
+    static_configs:
+      - targets: ['kube-state-metrics.kube-system.svc.cluster.local:8080']
+
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.+):(\d+)'
+        target_label: __address__
+        replacement: '${1}:9100'
+
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        regex: default;kubernetes;https
+        action: keep
+
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2

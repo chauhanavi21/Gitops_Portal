@@ -1,0 +1,184 @@
+# =============================================================================
+# Prometheus Alerting Rules — Platform Services
+# =============================================================================
+groups:
+  # -----------------------------------------------------------------------
+  # Service Health Alerts
+  # -----------------------------------------------------------------------
+  - name: service-health
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"order-service|user-service|api-gateway|pricing-engine|platform-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been unreachable for more than 2 minutes."
+          runbook_url: "https://docs.internal/runbooks/service-down"
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has > 5% error rate for the last 5 minutes. Current: {{ $value | humanizePercentage }}"
+
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CRITICAL error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has > 15% error rate. Immediate action required."
+
+  # -----------------------------------------------------------------------
+  # Latency Alerts
+  # -----------------------------------------------------------------------
+  - name: latency
+    rules:
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High P99 latency on {{ $labels.job }}"
+          description: "P99 latency for {{ $labels.job }} is {{ $value }}s (threshold: 2s)"
+
+      - alert: HighP50Latency
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High median latency on {{ $labels.job }}"
+          description: "P50 latency for {{ $labels.job }} is {{ $value }}s"
+
+  # -----------------------------------------------------------------------
+  # Resource Alerts
+  # -----------------------------------------------------------------------
+  - name: resources
+    rules:
+      - alert: HighCPUUsage
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{namespace="platform"}[5m])) by (pod)
+          /
+          sum(kube_pod_container_resource_limits{namespace="platform", resource="cpu"}) by (pod)
+          > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage on {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using > 85% of its CPU limit."
+
+      - alert: HighMemoryUsage
+        expr: |
+          sum(container_memory_working_set_bytes{namespace="platform"}) by (pod)
+          /
+          sum(kube_pod_container_resource_limits{namespace="platform", resource="memory"}) by (pod)
+          > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage on {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using > 85% of its memory limit."
+
+      - alert: PodRestartLoop
+        expr: increase(kube_pod_container_status_restarts_total{namespace="platform"}[1h]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} is in a restart loop"
+          description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour."
+
+  # -----------------------------------------------------------------------
+  # GitOps / Argo CD Alerts
+  # -----------------------------------------------------------------------
+  - name: argocd
+    rules:
+      - alert: ArgoCDAppOutOfSync
+        expr: argocd_app_info{sync_status!="Synced"} == 1
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Argo CD app {{ $labels.name }} is out of sync"
+          description: "Application {{ $labels.name }} has been out of sync for 15 minutes."
+
+      - alert: ArgoCDAppDegraded
+        expr: argocd_app_info{health_status="Degraded"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Argo CD app {{ $labels.name }} is degraded"
+          description: "Application {{ $labels.name }} health status is Degraded."
+
+  # -----------------------------------------------------------------------
+  # SLO-Based Alerts (Error Budget)
+  # -----------------------------------------------------------------------
+  - name: slo
+    rules:
+      # 99.9% availability SLO — Burn rate alert
+      - alert: SLOBurnRateHigh
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5..", job=~"order-service|user-service|api-gateway"}[1h])) by (job)
+            /
+            sum(rate(http_requests_total{job=~"order-service|user-service|api-gateway"}[1h])) by (job)
+          ) > (14.4 * 0.001)
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "SLO burn rate critical for {{ $labels.job }}"
+          description: "Error budget for {{ $labels.job }} is being consumed at 14.4x the acceptable rate. At this rate, the monthly error budget will be exhausted in < 1 day."
+
+      - alert: SLOBurnRateElevated
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5..", job=~"order-service|user-service|api-gateway"}[6h])) by (job)
+            /
+            sum(rate(http_requests_total{job=~"order-service|user-service|api-gateway"}[6h])) by (job)
+          ) > (6 * 0.001)
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SLO burn rate elevated for {{ $labels.job }}"
+          description: "Error budget for {{ $labels.job }} is being consumed at 6x the acceptable rate."
