@@ -1,0 +1,99 @@
+# Architecture Overview
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Developer Experience Layer                     │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐    │
+│   │  Backstage    │  │  Golden Path │  │  Platform API (FastAPI)  │    │
+│   │  Portal       │  │  Templates   │  │  - Service Registry      │    │
+│   │  - Catalog    │  │  - Go        │  │  - Template Engine       │    │
+│   │  - TechDocs   │  │  - Python    │  │  - Audit Log             │    │
+│   │  - Scaffolder │  │  - Node.js   │  │  - RBAC                  │    │
+│   └──────┬───────┘  │  - C++       │  └──────────┬───────────────┘    │
+│          │          └──────────────┘              │                     │
+└──────────┼───────────────────────────────────────┼─────────────────────┘
+           │                                        │
+┌──────────┼───────────────────────────────────────┼─────────────────────┐
+│          ▼           CI/CD Pipeline              ▼                      │
+│   ┌──────────────┐                    ┌───────────────────┐            │
+│   │  GitHub       │   Push Image      │  Git Repository   │            │
+│   │  Actions      │──────────────────▶│  (Source of Truth) │            │
+│   │  - Lint       │                   │  - K8s Manifests   │            │
+│   │  - Test       │                   │  - Kustomize       │            │
+│   │  - Build      │                   │  - Helm Values     │            │
+│   │  - Scan       │                   └────────┬──────────┘            │
+│   └──────────────┘                             │                       │
+│                                                │ Poll/Webhook          │
+│                                       ┌────────▼──────────┐           │
+│                                       │  Argo CD           │           │
+│                                       │  - Auto Sync (dev) │           │
+│                                       │  - Manual (prod)   │           │
+│                                       │  - App of Apps     │           │
+│                                       └────────┬──────────┘           │
+└────────────────────────────────────────────────┼───────────────────────┘
+                                                  │
+┌─────────────────────────────────────────────────┼──────────────────────┐
+│                    Kubernetes (EKS)             ▼                      │
+│   ┌──────────────────────────────────────────────────────────┐        │
+│   │  Platform Namespace                                       │        │
+│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │        │
+│   │  │  API      │ │  Order   │ │  User    │ │  Pricing    │ │        │
+│   │  │  Gateway  │ │  Service │ │  Service │ │  Engine     │ │        │
+│   │  │  (Node)   │ │  (Go)    │ │  (Python)│ │  (C++)      │ │        │
+│   │  │  :3000    │ │  :8080   │ │  :8000   │ │  :8080      │ │        │
+│   │  └──────────┘ └──────────┘ └──────────┘ └─────────────┘ │        │
+│   └──────────────────────────────────────────────────────────┘        │
+│                                                                        │
+│   ┌──────────────────────────────────────────────────────────┐        │
+│   │  Observability Namespace                                  │        │
+│   │  ┌────────┐ ┌────────────┐ ┌──────────┐ ┌────────┐      │        │
+│   │  │ OTel   │ │ Prometheus │ │  Grafana │ │ Jaeger │      │        │
+│   │  │Collect.│ │            │ │          │ │        │      │        │
+│   │  └────────┘ └────────────┘ └──────────┘ └────────┘      │        │
+│   └──────────────────────────────────────────────────────────┘        │
+└────────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────┼──────────────────────────────────────┐
+│          AWS Infrastructure     │  (Terraform-managed)                 │
+│   ┌──────────┐ ┌──────────┐ ┌──┴───────┐ ┌──────────────────┐        │
+│   │  VPC     │ │  IAM     │ │  EKS     │ │  ECR             │        │
+│   │  3 AZs   │ │  OIDC    │ │  v1.28   │ │  Container Reg.  │        │
+│   │  Priv/Pub│ │  IRSA    │ │  Managed │ │                  │        │
+│   └──────────┘ └──────────┘ │  Nodes   │ └──────────────────┘        │
+│                              └──────────┘                              │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Data Flow
+
+1. **Developer pushes code** → GitHub repository
+2. **GitHub Actions triggers** → Lint, Test, Build, Scan (Trivy)
+3. **Docker image pushed** → ECR with SHA-based tag
+4. **Manifest updated** → Kustomize image tag patched in Git
+5. **Argo CD detects** → Syncs new manifests to EKS cluster
+6. **Kubernetes rolls out** → New pods with health checks
+7. **OTel collector** → Receives traces, metrics, logs from all services
+8. **Grafana dashboards** → Visualize golden signals (latency, traffic, errors, saturation)
+
+## Network Architecture
+
+- **Zero-trust model**: Default deny all NetworkPolicies
+- **API Gateway** is the only service exposed to ingress
+- **Backend services** only accept traffic from API Gateway
+- **Observability** stack accepts telemetry from platform namespace
+- **DNS resolution** explicitly allowed for all pods
+
+## Security Layers
+
+| Layer | Implementation |
+|-------|---------------|
+| Network | NetworkPolicies (zero-trust) |
+| Admission | OPA Gatekeeper constraints |
+| Secrets | Sealed Secrets (encrypted in Git) |
+| RBAC | 3-tier roles (admin/owner/developer) |
+| Container | Non-root, read-only FS, no privileged |
+| Supply Chain | Trivy image scanning in CI |
+| Auth | AWS OIDC for CI, IRSA for pods |
+| Pod Security | PSS Restricted profile on namespace |
