@@ -1,0 +1,290 @@
+# =============================================================================
+# Docker Compose — Local Development Stack
+# =============================================================================
+# Starts all microservices, observability, and platform components locally.
+# Usage: docker-compose up -d
+# =============================================================================
+
+version: "3.9"
+
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local
+  OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-unknown}
+
+services:
+  # =========================================================================
+  # Microservices
+  # =========================================================================
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: api-gateway
+      PORT: "3000"
+      NODE_ENV: development
+      ORDER_SERVICE_URL: http://order-service:8080
+      USER_SERVICE_URL: http://user-service:8000
+      PRICING_SERVICE_URL: http://pricing-engine:8080
+    depends_on:
+      - order-service
+      - user-service
+      - pricing-engine
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: order-service
+      PORT: "8080"
+      LOG_LEVEL: debug
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: user-service
+      PORT: "8000"
+      LOG_LEVEL: debug
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  pricing-engine:
+    build:
+      context: ./services/pricing-engine
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: pricing-engine
+      PORT: "8080"
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  platform-api:
+    build:
+      context: ./platform-api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: platform-api
+      PORT: "8000"
+      # TODO: CONFIGURE — Set GitHub token for template scaffolding
+      # GITHUB_TOKEN: "ghp_..."
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  # =========================================================================
+  # Backstage Portal
+  # =========================================================================
+
+  backstage:
+    build:
+      context: ./backstage
+      dockerfile: Dockerfile
+    ports:
+      - "7007:7007"
+    environment:
+      # TODO: CONFIGURE — Set your GitHub credentials
+      # GITHUB_TOKEN: "ghp_..."
+      # AUTH_GITHUB_CLIENT_ID: "..."
+      # AUTH_GITHUB_CLIENT_SECRET: "..."
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: backstage
+      POSTGRES_PASSWORD: backstage_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - platform
+
+  # =========================================================================
+  # Databases
+  # =========================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: backstage
+      POSTGRES_PASSWORD: backstage_dev
+      POSTGRES_DB: backstage
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backstage"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  # =========================================================================
+  # Observability Stack
+  # =========================================================================
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # Health check
+      - "8888:8888"   # Metrics
+    volumes:
+      - ./observability/otel-collector/docker-config.yaml:/etc/otel-collector/config.yaml:ro
+    depends_on:
+      - jaeger
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    ports:
+      - "16686:16686" # UI
+      - "14250:14250" # gRPC
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - platform
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/docker-prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    networks:
+      - platform
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-clock-panel
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - jaeger
+    networks:
+      - platform
+
+  loki:
+    image: grafana/loki:2.9.3
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - platform
+
+# =========================================================================
+# Volumes
+# =========================================================================
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+# =========================================================================
+# Networks
+# =========================================================================
+
+networks:
+  platform:
+    driver: bridge
+    name: developer-platform
