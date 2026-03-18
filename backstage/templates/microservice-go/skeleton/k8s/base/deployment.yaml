@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app: ${{ values.name }}
+    team: ${{ values.owner }}
+spec:
+  replicas: ${{ values.replicas }}
+  selector:
+    matchLabels:
+      app: ${{ values.name }}
+  template:
+    metadata:
+      labels:
+        app: ${{ values.name }}
+        team: ${{ values.owner }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "${{ values.port }}"
+    spec:
+      serviceAccountName: ${{ values.name }}
+      containers:
+        - name: ${{ values.name }}
+          image: ${{ values.name }}:latest
+          ports:
+            - containerPort: ${{ values.port }}
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "otel-collector.observability.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "${{ values.name }}"
+          resources:
+            requests:
+              cpu: ${{ values.cpuRequest }}
+              memory: ${{ values.memoryRequest }}
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ${{ values.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ${{ values.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}

@@ -1,0 +1,59 @@
+# CI Pipeline — Pricing Engine (C++)
+name: CI - Pricing Engine (C++)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/pricing-engine/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/pricing-engine/**'
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  security-events: write
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libgtest-dev libbenchmark-dev
+
+      - name: Lint with clang-tidy
+        working-directory: services/pricing-engine
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cd ..
+          clang-tidy src/*.cpp -p build/ --warnings-as-errors='*' || true
+
+      - name: Build
+        working-directory: services/pricing-engine
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+
+      - name: Run tests
+        working-directory: services/pricing-engine/build
+        run: ctest --output-on-failure
+
+  build-and-push:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      service_name: pricing-engine
+      service_path: services/pricing-engine
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
