@@ -1,0 +1,132 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: microservice-go
+  title: Microservice — Go (Gin)
+  description: |
+    Create a production-ready Go microservice with Gin framework,
+    OpenTelemetry instrumentation, Prometheus metrics, Dockerfile,
+    Kustomize manifests, and CI/CD pipeline.
+  tags:
+    - go
+    - microservice
+    - golden-path
+    - recommended
+spec:
+  owner: group:platform-engineering
+  type: service
+
+  parameters:
+    - title: Service Information
+      required:
+        - name
+        - description
+        - owner
+      properties:
+        name:
+          title: Service Name
+          type: string
+          description: Unique name for the service (lowercase, hyphens only)
+          pattern: "^[a-z][a-z0-9-]*$"
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+          description: What does this service do?
+        owner:
+          title: Owner
+          type: string
+          description: Team that owns this service
+          ui:field: OwnerPicker
+          ui:options:
+            allowedKinds:
+              - Group
+
+    - title: Technical Configuration
+      properties:
+        port:
+          title: Service Port
+          type: integer
+          default: 8080
+          description: Port the service listens on
+        goVersion:
+          title: Go Version
+          type: string
+          default: "1.21"
+          enum: ["1.21", "1.22"]
+        hasDatabase:
+          title: Needs Database
+          type: boolean
+          default: false
+          description: Include PostgreSQL database configuration
+        hasRedis:
+          title: Needs Redis
+          type: boolean
+          default: false
+
+    - title: Deployment Configuration
+      properties:
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          default: platform
+        replicas:
+          title: Initial Replicas
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 10
+        cpuRequest:
+          title: CPU Request
+          type: string
+          default: "100m"
+        memoryRequest:
+          title: Memory Request
+          type: string
+          default: "128Mi"
+
+  steps:
+    - id: fetch-skeleton
+      name: Fetch Skeleton
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          port: ${{ parameters.port }}
+          goVersion: ${{ parameters.goVersion }}
+          hasDatabase: ${{ parameters.hasDatabase }}
+          hasRedis: ${{ parameters.hasRedis }}
+          namespace: ${{ parameters.namespace }}
+          replicas: ${{ parameters.replicas }}
+          cpuRequest: ${{ parameters.cpuRequest }}
+          memoryRequest: ${{ parameters.memoryRequest }}
+
+    # TODO: EXTERNAL DEPENDENCY — Requires GitHub integration configured
+    - id: publish
+      name: Publish to GitHub
+      action: publish:github
+      input:
+        allowedHosts: ["github.com"]
+        # TODO: CONFIGURE — Set your GitHub org
+        repoUrl: "github.com?owner=YOUR_ORG&repo=${{ parameters.name }}"
+        description: ${{ parameters.description }}
+        defaultBranch: main
+        protectDefaultBranch: true
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

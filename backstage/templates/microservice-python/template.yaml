@@ -1,0 +1,111 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: microservice-python
+  title: Microservice — Python (FastAPI)
+  description: |
+    Create a production-ready Python microservice with FastAPI,
+    OpenTelemetry instrumentation, Prometheus metrics, Dockerfile,
+    Kustomize manifests, and CI/CD pipeline.
+  tags:
+    - python
+    - fastapi
+    - microservice
+    - golden-path
+spec:
+  owner: group:platform-engineering
+  type: service
+
+  parameters:
+    - title: Service Information
+      required:
+        - name
+        - description
+        - owner
+      properties:
+        name:
+          title: Service Name
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+        owner:
+          title: Owner
+          type: string
+          ui:field: OwnerPicker
+          ui:options:
+            allowedKinds:
+              - Group
+
+    - title: Technical Configuration
+      properties:
+        port:
+          title: Service Port
+          type: integer
+          default: 8000
+        pythonVersion:
+          title: Python Version
+          type: string
+          default: "3.11"
+          enum: ["3.11", "3.12"]
+        hasDatabase:
+          title: Needs Database (SQLAlchemy + PostgreSQL)
+          type: boolean
+          default: false
+        hasRedis:
+          title: Needs Redis
+          type: boolean
+          default: false
+
+    - title: Deployment Configuration
+      properties:
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          default: platform
+        replicas:
+          title: Initial Replicas
+          type: integer
+          default: 2
+
+  steps:
+    - id: fetch-skeleton
+      name: Fetch Skeleton
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          port: ${{ parameters.port }}
+          pythonVersion: ${{ parameters.pythonVersion }}
+          namespace: ${{ parameters.namespace }}
+          replicas: ${{ parameters.replicas }}
+
+    - id: publish
+      name: Publish to GitHub
+      action: publish:github
+      input:
+        allowedHosts: ["github.com"]
+        # TODO: CONFIGURE — Set your GitHub org
+        repoUrl: "github.com?owner=YOUR_ORG&repo=${{ parameters.name }}"
+        description: ${{ parameters.description }}
+        defaultBranch: main
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

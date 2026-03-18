@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    argocd/app-name: ${{ values.name }}
+  tags:
+    - cpp
+    - high-performance
+    - microservice
+spec:
+  type: service
+  lifecycle: production
+  owner: ${{ values.owner }}
+  system: developer-platform
