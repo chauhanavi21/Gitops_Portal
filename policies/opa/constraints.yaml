@@ -1,0 +1,260 @@
+# =============================================================================
+# OPA Gatekeeper / Kyverno-Style Policy Constraints
+# =============================================================================
+# Security policies enforced at admission time via OPA Gatekeeper
+# =============================================================================
+
+# ─── Constraint Template: Require Non-Root Containers ────────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirenonroot
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireNonRoot
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirenonroot
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.securityContext.runAsNonRoot
+          msg := sprintf("Container '%v' must set securityContext.runAsNonRoot=true", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not container.securityContext.runAsNonRoot
+          msg := sprintf("Init container '%v' must set securityContext.runAsNonRoot=true", [container.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireNonRoot
+metadata:
+  name: require-non-root-containers
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["platform"]
+---
+# ─── Constraint Template: Require Resource Limits ────────────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequireresourcelimits
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireResourceLimits
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequireresourcelimits
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.cpu
+          msg := sprintf("Container '%v' must specify resources.limits.cpu", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Container '%v' must specify resources.limits.memory", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.requests.cpu
+          msg := sprintf("Container '%v' must specify resources.requests.cpu", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.requests.memory
+          msg := sprintf("Container '%v' must specify resources.requests.memory", [container.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireResourceLimits
+metadata:
+  name: require-resource-limits
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["platform"]
+---
+# ─── Constraint Template: Disallow Privileged Containers ─────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowprivileged
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowPrivileged
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowprivileged
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          container.securityContext.privileged
+          msg := sprintf("Container '%v' must not run in privileged mode", [container.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowPrivileged
+metadata:
+  name: disallow-privileged-containers
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["platform"]
+---
+# ─── Constraint Template: Require Labels ─────────────────────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirelabels
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirelabels
+
+        violation[{"msg": msg}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("Missing required labels: %v", [missing])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireLabels
+metadata:
+  name: require-standard-labels
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces: ["platform"]
+  parameters:
+    labels:
+      - "app"
+      - "version"
+      - "team"
+---
+# ─── Constraint Template: Restrict Image Registries ──────────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sallowedregistries
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sAllowedRegistries
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            registries:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sallowedregistries
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not registry_allowed(container.image)
+          msg := sprintf("Container '%v' uses disallowed registry: %v. Allowed: %v", [container.name, container.image, input.parameters.registries])
+        }
+
+        registry_allowed(image) {
+          registry := input.parameters.registries[_]
+          startswith(image, registry)
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sAllowedRegistries
+metadata:
+  name: allowed-registries
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["platform"]
+  parameters:
+    registries:
+      # TODO: CONFIGURE — Add your ECR registry
+      - "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/"
+      - "ghcr.io/your-org/"
+---
+# ─── Constraint Template: Disallow Latest Tag ───────────────────────────────
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowlatesttag
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowLatestTag
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowlatesttag
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          endswith(container.image, ":latest")
+          msg := sprintf("Container '%v' uses ':latest' tag. Use a specific version tag.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not contains(container.image, ":")
+          msg := sprintf("Container '%v' has no image tag — implicit :latest. Use a specific version tag.", [container.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowLatestTag
+metadata:
+  name: disallow-latest-tag
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["platform"]
